@@ -13,11 +13,11 @@ public struct NameEntry: Equatable, Sendable {
 }
 
 public enum Names {
-    /// `<repo>/names.txt`, where `<repo>` is the nearest ancestor of the running executable's
+    /// `<repo>/dictate/names.txt`, where `<repo>` is the nearest ancestor of the running executable's
     /// real path (symlinks resolved) that contains `dictate/Package.swift`. `nil` if not found.
     public static func defaultPath(executable: URL? = Bundle.main.executableURL) -> URL? {
         guard let exe = executable else { return nil }
-        return repoRoot(fromExecutable: exe)?.appendingPathComponent("names.txt")
+        return repoRoot(fromExecutable: exe)?.appendingPathComponent("dictate/names.txt")
     }
 
     /// Loads name entries from `path`. `nil` or a missing file → `[]`; an unreadable file throws.

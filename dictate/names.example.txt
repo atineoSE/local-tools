@@ -1,0 +1,7 @@
+# Names that speech recognition gets wrong. Copy this file to names.txt (git-ignored) and edit.
+# One entry per line: NAME, optional context, heard: variant | variant | ...
+# The context may contain commas. Heard-as variants are replaced by NAME (case-insensitive,
+# whole words, longest first). Lines starting with # and blank lines are ignored.
+Voxtral, Mistral's speech model, heard: rock stroll | box trawl | foxtraw
+Mistral, AI company from Paris, heard: miss trail | mostral
+Arthur

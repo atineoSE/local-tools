@@ -105,17 +105,17 @@ import Testing
         // The installed command is a symlink (e.g. ~/.local/bin/dictate); its default names file is the repo's.
         let names = Names.defaultPath(executable: link)
         #expect(names?.lastPathComponent == "names.txt")
-        #expect(names?.deletingLastPathComponent().resolvingSymlinksInPath().path == expected)
+        #expect(names?.deletingLastPathComponent().deletingLastPathComponent().resolvingSymlinksInPath().path == expected)
         // Without the package marker, nothing is found.
         try fm.removeItem(at: repo.appendingPathComponent("dictate/Package.swift"))
         #expect(Names.repoRoot(fromExecutable: link) == nil)
     }
 
     @Test func defaultPathFindsThisRepo() {
-        // The test binary lives under dictate/.build, so the default resolves to <repo>/names.txt.
+        // The test binary lives under dictate/.build, so the default resolves to <repo>/dictate/names.txt.
         guard let path = Names.defaultPath() else { return }
         #expect(path.lastPathComponent == "names.txt")
-        #expect(FileManager.default.fileExists(atPath: path.deletingLastPathComponent().appendingPathComponent("dictate/Package.swift").path))
+        #expect(FileManager.default.fileExists(atPath: path.deletingLastPathComponent().appendingPathComponent("Package.swift").path))
     }
 
     private func makeTempDir() throws -> URL {
