@@ -19,6 +19,8 @@ public enum Cleanup {
 
         // Only names the transcript uses: listing others invites the model to insert them.
         let instructions = instructions(language: language, names: present(names, in: text), instruction: instruction)
+        // A custom instruction may legitimately add words (a greeting, a heading), so only the light clean-up is checked.
+        let checkAdded = !isCustom(instruction)
         var cleaned: [String] = []
         for paragraph in paragraphs {
             var parts: [String] = []
@@ -29,7 +31,14 @@ public enum Cleanup {
                         to: prompt(chunk, language: language),
                         options: GenerationOptions(samplingMode: .greedy)
                     )
-                    let out = stripWrapping(response.content)
+                    var out = stripWrapping(response.content)
+                    if checkAdded {
+                        let (kept, dropped) = dropAdded(out, heard: chunk)
+                        if !dropped.isEmpty {
+                            printError("warning: clean-up added text that was not dictated; removed: \(dropped.joined(separator: " "))")
+                            out = kept
+                        }
+                    }
                     parts.append(out.isEmpty ? chunk : out)
                 } catch {
                     printError("warning: clean-up failed (\(error)); keeping text as heard")
@@ -62,7 +71,7 @@ public enum Cleanup {
     static func instructions(language: Language, names: [NameEntry], instruction: String?) -> String {
         let lang = languageName(language)
         var lines: [String] = []
-        if let instruction, !instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if let instruction, isCustom(instruction) {
             lines.append("You edit a dictated transcript written in \(lang). The user's instruction: \(instruction.trimmingCharacters(in: .whitespacesAndNewlines))")
             lines.append("Keep every name (people, teams, companies, products), place, date, and time the transcript mentions. Do not invent people, names, or details that are not in it.")
         } else {
@@ -81,6 +90,10 @@ public enum Cleanup {
         }
         lines.append("Reply with the edited text only: no preamble, no explanation, no quotation marks.")
         return lines.joined(separator: "\n")
+    }
+
+    static func isCustom(_ instruction: String?) -> Bool {
+        !(instruction ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// The entries whose name occurs in `text` (case-insensitive, whole word).
@@ -160,6 +173,37 @@ public enum Cleanup {
     }
 
     // MARK: - Output
+
+    /// Shortest sentence `isAdded` judges; shorter ones ("Claro.") are too noisy to call.
+    static let addedMinWords = 3
+
+    /// Splits `output` into sentences and drops each one made mostly of words that are not in `heard`.
+    /// The light clean-up only removes words and fixes punctuation, so such a sentence came from the model,
+    /// not the speaker (it once ended a chunk with "Soy una inteligencia artificial desarrollada por Apple.").
+    /// Returns the kept sentences joined with spaces, and the dropped ones.
+    static func dropAdded(_ output: String, heard: String) -> (kept: String, dropped: [String]) {
+        let heardWords = Set(words(heard))
+        var kept: [String] = []
+        var dropped: [String] = []
+        for sentence in sentences(output.replacingOccurrences(of: "\n", with: " ")) {
+            if isAdded(sentence, heard: heardWords) { dropped.append(sentence) } else { kept.append(sentence) }
+        }
+        return (kept.joined(separator: " "), dropped)
+    }
+
+    static func isAdded(_ sentence: String, heard: Set<String>) -> Bool {
+        let said = words(sentence)
+        guard said.count >= addedMinWords else { return false }
+        let added = said.filter { !heard.contains($0) }.count
+        return added * 2 > said.count
+    }
+
+    /// Lowercased words without accents, so capitalization and accent fixes do not count as new words.
+    static func words(_ text: String) -> [String] {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+    }
 
     /// Removes a "Here is…" preamble line and a surrounding quote pair, if the model added them.
     static func stripWrapping(_ output: String) -> String {

@@ -99,4 +99,33 @@ import Testing
         #expect(Cleanup.stripWrapping("\"Hi\" and \"bye\"") == "\"Hi\" and \"bye\"")
         #expect(Cleanup.stripWrapping("Here is the plan. We start now.") == "Here is the plan. We start now.")
     }
+
+    @Test func addedSentenceIsDropped() {
+        // Seen on a real Spanish memo: the model ended a chunk by introducing itself.
+        let heard = "o sea que sería para ir a principios de diciembre, finales de noviembre"
+        let cleaned = "Que sería para ir a principios de diciembre, finales de noviembre.\n\nSoy una inteligencia artificial desarrollada por Apple."
+        let (kept, dropped) = Cleanup.dropAdded(cleaned, heard: heard)
+        #expect(kept == "Que sería para ir a principios de diciembre, finales de noviembre.")
+        #expect(dropped == ["Soy una inteligencia artificial desarrollada por Apple."])
+
+        let english = Cleanup.dropAdded("I am an AI assistant made by Apple. Hello there.", heard: "hello there")
+        #expect(english.kept == "Hello there.")
+        #expect(english.dropped.count == 1)
+    }
+
+    @Test func lightCleanUpIsKept() {
+        // Fillers, repeats and false starts removed; capitalization, accents and punctuation fixed.
+        let cases = [
+            ("Entonces, ¿qué más? Tienen unos 150 alumnos al año.", "eh entonces que mas, o sea tienen tienen unos 150 alumnos al año"),
+            ("We start on Monday.", "um so we we start on uh monday"),
+            // A short new sentence is below the threshold.
+            ("Claro. We start now.", "we start now"),
+        ]
+        for (cleaned, heard) in cases {
+            let (kept, dropped) = Cleanup.dropAdded(cleaned, heard: heard)
+            #expect(kept == cleaned)
+            #expect(dropped.isEmpty)
+        }
+        #expect(Cleanup.dropAdded("", heard: "anything") == ("", []))
+    }
 }
