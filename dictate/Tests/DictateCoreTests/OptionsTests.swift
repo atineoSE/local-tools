@@ -72,8 +72,4 @@ import Testing
         let text = "So, um, hello"
         #expect(await process(text, options: Options(file: "x", raw: true)) == text)
     }
-
-    @Test func stubPipelineLeavesTextUnchanged() async {
-        #expect(await process("hello", options: Options(file: "x")) == "hello")
-    }
 }
