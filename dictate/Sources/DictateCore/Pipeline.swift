@@ -5,6 +5,9 @@ import Foundation
 public func process(_ raw: String, options: Options) async -> String {
     if options.raw { return raw }
     let path = options.namesPath.map(URL.init(fileURLWithPath:)) ?? Names.defaultPath()
+    if let explicit = options.namesPath, !FileManager.default.fileExists(atPath: explicit) {
+        printError("warning: names file \(explicit) not found; names not replaced")
+    }
     let names: [NameEntry]
     do {
         names = try Names.load(path: path)

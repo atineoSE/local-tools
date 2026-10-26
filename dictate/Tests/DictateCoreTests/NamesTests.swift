@@ -102,6 +102,10 @@ import Testing
         #expect(Names.repoRoot(fromExecutable: link)?.standardizedFileURL.path.hasSuffix("/repo") == true)
         #expect(Names.repoRoot(fromExecutable: link)?.resolvingSymlinksInPath().path == expected)
         #expect(Names.repoRoot(fromExecutable: exe)?.resolvingSymlinksInPath().path == expected)
+        // The installed command is a symlink (e.g. ~/.local/bin/dictate); its default names file is the repo's.
+        let names = Names.defaultPath(executable: link)
+        #expect(names?.lastPathComponent == "names.txt")
+        #expect(names?.deletingLastPathComponent().resolvingSymlinksInPath().path == expected)
         // Without the package marker, nothing is found.
         try fm.removeItem(at: repo.appendingPathComponent("dictate/Package.swift"))
         #expect(Names.repoRoot(fromExecutable: link) == nil)

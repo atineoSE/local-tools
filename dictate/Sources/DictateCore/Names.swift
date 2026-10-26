@@ -15,8 +15,8 @@ public struct NameEntry: Equatable, Sendable {
 public enum Names {
     /// `<repo>/names.txt`, where `<repo>` is the nearest ancestor of the running executable's
     /// real path (symlinks resolved) that contains `dictate/Package.swift`. `nil` if not found.
-    public static func defaultPath() -> URL? {
-        guard let exe = Bundle.main.executableURL else { return nil }
+    public static func defaultPath(executable: URL? = Bundle.main.executableURL) -> URL? {
+        guard let exe = executable else { return nil }
         return repoRoot(fromExecutable: exe)?.appendingPathComponent("names.txt")
     }
 

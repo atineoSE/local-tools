@@ -30,6 +30,9 @@ import Testing
         #expect(!i.contains("Do not summarise"))
         #expect(i.contains("Write the result in Spanish"))
         #expect(i.contains("- Voxtral (Mistral's speech model)"))
+        // Rewrites must not drop names from the transcript or invent recipients from the names list.
+        #expect(i.contains("Keep every name"))
+        #expect(i.contains("do not add a name the transcript does not use"))
     }
 
     @Test func blankCustomInstructionFallsBackToDefault() {
@@ -41,8 +44,16 @@ import Testing
         let i = Cleanup.instructions(language: .en, names: names, instruction: nil)
         #expect(i.contains("- Voxtral (Mistral's speech model)"))
         #expect(i.contains("- Arthur\n"))
-        #expect(i.contains("Do not replace any other words with these names."))
+        #expect(i.contains("Do not replace any other words with these names"))
+        #expect(i.contains("do not add a name the transcript does not use"))
         #expect(!i.contains("rock stroll"))
+    }
+
+    @Test func onlyNamesInTheTranscriptAreListed() {
+        // Listing "Arthur" for a transcript without him led the model to address an email to him.
+        #expect(Cleanup.present(names, in: "The voxtral demo.") == [names[0]])
+        #expect(Cleanup.present(names, in: "Arthurian legends") == [])
+        #expect(Cleanup.present(names, in: "Hi Arthur, Voxtral works.") == names)
     }
 
     @Test func shortTextIsOneChunk() {
