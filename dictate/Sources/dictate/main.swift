@@ -22,8 +22,19 @@ do {
         printError("dictate: no such file: \(url.path)")
         exit(1)
     }
-    let raw = try await Transcribe.file(url, language: options.language)
-    print(await process(raw, options: options))
+    if options.speakers {
+        async let pieces = Transcribe.timedFile(url, language: options.language)
+        async let spans = Speakers.diarize(url, count: options.speakerCount)
+        var turns = Speakers.turns(try await pieces, spans: try await spans)
+        // Names and clean-up per turn, so the model never sees (or rewrites) the speaker labels.
+        for i in turns.indices {
+            turns[i].text = await process(turns[i].text, options: options)
+        }
+        print(Speakers.format(turns))
+    } else {
+        let raw = try await Transcribe.file(url, language: options.language)
+        print(await process(raw, options: options))
+    }
 } catch {
     printError("dictate: \(error)")
     exit(1)
