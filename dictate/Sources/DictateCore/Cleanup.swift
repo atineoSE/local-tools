@@ -7,7 +7,11 @@ public enum Cleanup {
 
     /// Cleans up a transcript with the on-device language model. Never loses dictation: if the model
     /// is unavailable or a call fails, prints a warning on stderr and keeps the uncleaned text.
-    public static func run(_ text: String, language: Language, names: [NameEntry], instruction: String?) async -> String {
+    /// `progress` gets (chunk number from 1, number of chunks) before each model call.
+    public static func run(
+        _ text: String, language: Language, names: [NameEntry], instruction: String?,
+        progress: ((Int, Int) -> Void)? = nil
+    ) async -> String {
         let paragraphs = chunks(text)
         if paragraphs.isEmpty { return text }
 
@@ -22,9 +26,13 @@ public enum Cleanup {
         // A custom instruction may legitimately add words (a greeting, a heading), so only the light clean-up is checked.
         let checkAdded = !isCustom(instruction)
         var cleaned: [String] = []
+        let total = paragraphs.reduce(0) { $0 + $1.count }
+        var number = 0
         for paragraph in paragraphs {
             var parts: [String] = []
             for chunk in paragraph {
+                number += 1
+                progress?(number, total)
                 let session = LanguageModelSession(model: model, instructions: instructions)
                 do {
                     let response = try await session.respond(

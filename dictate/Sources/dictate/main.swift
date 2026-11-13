@@ -30,8 +30,9 @@ do {
         let groups = options.speakers ? Speakers.groups(pieces, spans: spans) : [(speaker: 1, pieces: pieces)]
         var turns: [(speaker: Int, sentences: [TimedSentence])] = []
         var rough = false
-        for group in groups {
-            let text = await process(Timestamps.rawText(group.pieces), options: options)
+        for (i, group) in groups.enumerated() {
+            let turn = options.speakers ? (i + 1, groups.count) : nil
+            let text = await process(Timestamps.rawText(group.pieces), options: options, turn: turn)
             let (sentences, matched) = Timestamps.align(text, to: group.pieces)
             rough = rough || matched < Timestamps.roughBelow
             if !sentences.isEmpty { turns.append((group.speaker, sentences)) }
@@ -39,6 +40,7 @@ do {
         if rough {
             printError("warning: the cleaned-up text differs a lot from what was said; timestamps are approximate")
         }
+        Status.shared.finish()
         print(options.speakers ? Timestamps.format(turns) : Timestamps.format(turns.flatMap(\.sentences)))
     } else if options.speakers {
         async let pieces = Transcribe.timedFile(url, language: options.language)
@@ -46,14 +48,18 @@ do {
         var turns = Speakers.turns(try await pieces, spans: try await spans)
         // Names and clean-up per turn, so the model never sees (or rewrites) the speaker labels.
         for i in turns.indices {
-            turns[i].text = await process(turns[i].text, options: options)
+            turns[i].text = await process(turns[i].text, options: options, turn: (i + 1, turns.count))
         }
+        Status.shared.finish()
         print(Speakers.format(turns))
     } else {
         let raw = try await Transcribe.file(url, language: options.language)
-        print(await process(raw, options: options))
+        let text = await process(raw, options: options)
+        Status.shared.finish()
+        print(text)
     }
 } catch {
+    Status.shared.finish()
     printError("dictate: \(error)")
     exit(1)
 }

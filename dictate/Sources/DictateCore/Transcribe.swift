@@ -25,20 +25,40 @@ public enum Transcribe {
             : SpeechTranscriber(locale: locale, preset: .transcription)
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             printError("Downloading on-device speech model for \(localeID)…")
+            let progress = request.progress
+            Status.shared.set("Downloading speech model") { Status.percent(progress.fractionCompleted) }
+            defer { Status.shared.done("Downloading speech model") }
             try await request.downloadAndInstall()
             printError("Speech model installed.")
         }
         return transcriber
     }
 
+    /// Status stage shown while a file is transcribed.
+    static let stage = "Transcribing"
+
+    /// Shows how far into the file the transcriber has got, as a percentage of its duration.
+    static func report(_ result: SpeechTranscriber.Result, duration: Double) {
+        guard duration > 0 else { return }
+        Status.shared.set(stage, fraction: result.range.end.seconds / duration)
+    }
+
+    static func duration(_ file: AVAudioFile) -> Double {
+        Double(file.length) / file.processingFormat.sampleRate
+    }
+
     public static func file(_ url: URL, language: Language) async throws -> String {
         let transcriber = try await makeTranscriber(language: language)
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         let file = try AVAudioFile(forReading: url)
+        let duration = duration(file)
+        Status.shared.set(stage, fraction: 0)
+        defer { Status.shared.done(stage) }
         let collector = Task {
             var text = ""
             for try await result in transcriber.results where result.isFinal {
                 text += String(result.text.characters)
+                report(result, duration: duration)
             }
             return text
         }
@@ -57,6 +77,9 @@ public enum Transcribe {
         let transcriber = try await makeTranscriber(language: language, timed: true)
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         let file = try AVAudioFile(forReading: url)
+        let duration = duration(file)
+        Status.shared.set(stage, fraction: 0)
+        defer { Status.shared.done(stage) }
         let collector = Task {
             var pieces: [TimedText] = []
             for try await result in transcriber.results where result.isFinal {
@@ -68,6 +91,7 @@ public enum Transcribe {
                         end: range.end.seconds
                     ))
                 }
+                report(result, duration: duration)
             }
             return pieces
         }

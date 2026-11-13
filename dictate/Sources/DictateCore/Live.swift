@@ -132,14 +132,17 @@ public enum Live {
             return 130
         }
 
+        Status.shared.set("Finishing transcription")
         try await analyzer.finalizeAndFinishThroughEndOfInput()
         let raw = try await collector.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        Status.shared.done("Finishing transcription")
         guard !raw.isEmpty else {
             printError("dictate: Nothing was heard")
             Feedback.notifyError("Nothing was heard")
             return 1
         }
         let text = await process(raw, options: options)
+        Status.shared.finish()
         Feedback.copyToClipboard(text)
         print(text)
         fflush(stdout)
@@ -148,6 +151,7 @@ public enum Live {
     }
 
     private static func fail(_ message: String) -> Int32 {
+        Status.shared.finish()
         printError("dictate: \(message)")
         Feedback.notifyError(message)
         return 1

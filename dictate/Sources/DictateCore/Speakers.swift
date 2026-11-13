@@ -51,8 +51,22 @@ public enum Speakers {
         if !FileManager.default.fileExists(atPath: cache.path) {
             printError("Downloading on-device speaker models…")
         }
-        try await manager.prepareModels()
-        let result = try await manager.process(url)
+        // FluidAudio also writes "[Profiling]" timing lines straight to stderr (model warm-up included).
+        let result = try await Stderr.dropping(prefix: "[Profiling]") {
+            do {
+                Status.shared.set("Loading speaker models")
+                defer { Status.shared.done("Loading speaker models") }
+                try await manager.prepareModels()
+            }
+            // Progress counts segmentation chunks; embeddings and clustering finish after the last one,
+            // so it stops at 99% until the result is in.
+            let stage = "Finding speakers"
+            Status.shared.set(stage, fraction: 0)
+            defer { Status.shared.done(stage) }
+            return try await manager.process(url) { done, total in
+                Status.shared.set(stage, fraction: min(Double(done) / Double(max(total, 1)), 0.99))
+            }
+        }
         return result.segments.map {
             SpeakerSpan(speaker: $0.speakerId, start: Double($0.startTimeSeconds), end: Double($0.endTimeSeconds))
         }
