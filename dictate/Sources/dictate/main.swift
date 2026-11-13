@@ -22,7 +22,25 @@ do {
         printError("dictate: no such file: \(url.path)")
         exit(1)
     }
-    if options.speakers {
+    if options.timestamps {
+        // Clean up the text as heard, then match its words back to the heard words for their times.
+        async let timed = Transcribe.timedFile(url, language: options.language)
+        let spans = options.speakers ? try await Speakers.diarize(url, count: options.speakerCount) : []
+        let pieces = try await timed
+        let groups = options.speakers ? Speakers.groups(pieces, spans: spans) : [(speaker: 1, pieces: pieces)]
+        var turns: [(speaker: Int, sentences: [TimedSentence])] = []
+        var rough = false
+        for group in groups {
+            let text = await process(Timestamps.rawText(group.pieces), options: options)
+            let (sentences, matched) = Timestamps.align(text, to: group.pieces)
+            rough = rough || matched < Timestamps.roughBelow
+            if !sentences.isEmpty { turns.append((group.speaker, sentences)) }
+        }
+        if rough {
+            printError("warning: the cleaned-up text differs a lot from what was said; timestamps are approximate")
+        }
+        print(options.speakers ? Timestamps.format(turns) : Timestamps.format(turns.flatMap(\.sentences)))
+    } else if options.speakers {
         async let pieces = Transcribe.timedFile(url, language: options.language)
         async let spans = Speakers.diarize(url, count: options.speakerCount)
         var turns = Speakers.turns(try await pieces, spans: try await spans)

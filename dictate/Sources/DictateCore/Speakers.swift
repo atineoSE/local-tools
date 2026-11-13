@@ -62,29 +62,32 @@ public enum Speakers {
     /// none overlaps), then merges neighbours with the same speaker. Whitespace-only pieces stay with
     /// the previous speaker. No spans at all → one turn by speaker 1.
     public static func turns(_ pieces: [TimedText], spans: [SpeakerSpan]) -> [Turn] {
+        groups(pieces, spans: spans).map { Turn(speaker: $0.speaker, text: Timestamps.rawText($0.pieces)) }
+    }
+
+    /// Like `turns`, but keeps each turn's pieces (with their times) instead of joining them.
+    /// Turns with no text are left out.
+    public static func groups(_ pieces: [TimedText], spans: [SpeakerSpan]) -> [(speaker: Int, pieces: [TimedText])] {
         var numbers: [String: Int] = [:]
-        var turns: [Turn] = []
+        var groups: [(speaker: Int, pieces: [TimedText])] = []
         for piece in pieces {
             let isBlank = piece.text.allSatisfy(\.isWhitespace)
             let speaker: Int
-            if isBlank, let last = turns.last {
+            if isBlank, let last = groups.last {
                 speaker = last.speaker
             } else if let id = bestSpeaker(for: piece, in: spans) {
                 if numbers[id] == nil { numbers[id] = numbers.count + 1 }
                 speaker = numbers[id]!
             } else {
-                speaker = turns.last?.speaker ?? 1
+                speaker = groups.last?.speaker ?? 1
             }
-            if turns.last?.speaker == speaker {
-                turns[turns.count - 1].text += piece.text
+            if groups.last?.speaker == speaker {
+                groups[groups.count - 1].pieces.append(piece)
             } else {
-                turns.append(Turn(speaker: speaker, text: piece.text))
+                groups.append((speaker, [piece]))
             }
         }
-        return turns.compactMap {
-            let text = $0.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return text.isEmpty ? nil : Turn(speaker: $0.speaker, text: text)
-        }
+        return groups.filter { !Timestamps.rawText($0.pieces).isEmpty }
     }
 
     static func bestSpeaker(for piece: TimedText, in spans: [SpeakerSpan]) -> String? {
