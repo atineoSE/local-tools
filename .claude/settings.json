@@ -1,0 +1,11 @@
+{
+  "sandbox": {
+   "excludedCommands": [
+     "swift build *",
+     "swift test *",
+     "dictate/.build/debug/dictate *",
+     "dictate/.build/release/dictate *"
+   ]
+  }
+}
+
