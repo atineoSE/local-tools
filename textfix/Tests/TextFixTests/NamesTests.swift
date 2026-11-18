@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import DictateCore
+@testable import TextFix
 
 @Suite struct NamesTests {
     @Test func parsesExampleFormat() {
@@ -33,6 +33,21 @@ import Testing
     @Test func heardListMayContainCommas() {
         let e = Names.parseLine("Foo, ctx, heard: a, b | c")
         #expect(e?.heardAs == ["a, b", "c"])
+    }
+
+    @Test func seenIsTheSameAsHeard() {
+        // OCR names files read better with "seen:".
+        #expect(Names.parseLine("Begoña, a colleague, seen: Begofia | Bcgoña") ==
+                NameEntry(name: "Begoña", context: "a colleague", heardAs: ["Begofia", "Bcgoña"]))
+        #expect(Names.parseLine("Begoña, SEEN: Begofia")?.heardAs == ["Begofia"])
+    }
+
+    @Test func loadExplicitMissingWarns() {
+        var warnings: [String] = []
+        let entries = Names.load(explicit: "/no/such/names-\(UUID()).txt", tool: "textfix") { warnings.append($0) }
+        #expect(entries == [])
+        #expect(warnings.count == 1)
+        #expect(warnings[0].contains("not found"))
     }
 
     @Test func missingNameIsSkipped() {
@@ -99,21 +114,21 @@ import Testing
         try fm.createSymbolicLink(at: link, withDestinationURL: exe)
 
         let expected = repo.resolvingSymlinksInPath().standardizedFileURL.path
-        #expect(Names.repoRoot(fromExecutable: link)?.standardizedFileURL.path.hasSuffix("/repo") == true)
-        #expect(Names.repoRoot(fromExecutable: link)?.resolvingSymlinksInPath().path == expected)
-        #expect(Names.repoRoot(fromExecutable: exe)?.resolvingSymlinksInPath().path == expected)
+        #expect(Names.repoRoot(fromExecutable: link, tool: "dictate")?.standardizedFileURL.path.hasSuffix("/repo") == true)
+        #expect(Names.repoRoot(fromExecutable: link, tool: "dictate")?.resolvingSymlinksInPath().path == expected)
+        #expect(Names.repoRoot(fromExecutable: exe, tool: "dictate")?.resolvingSymlinksInPath().path == expected)
         // The installed command is a symlink (e.g. ~/.local/bin/dictate); its default names file is the repo's.
-        let names = Names.defaultPath(executable: link)
+        let names = Names.defaultPath(tool: "dictate", executable: link)
         #expect(names?.lastPathComponent == "names.txt")
         #expect(names?.deletingLastPathComponent().deletingLastPathComponent().resolvingSymlinksInPath().path == expected)
         // Without the package marker, nothing is found.
         try fm.removeItem(at: repo.appendingPathComponent("dictate/Package.swift"))
-        #expect(Names.repoRoot(fromExecutable: link) == nil)
+        #expect(Names.repoRoot(fromExecutable: link, tool: "dictate") == nil)
     }
 
     @Test func defaultPathFindsThisRepo() {
-        // The test binary lives under dictate/.build, so the default resolves to <repo>/dictate/names.txt.
-        guard let path = Names.defaultPath() else { return }
+        // The test binary lives under textfix/.build, so the default resolves to <repo>/textfix/names.txt.
+        guard let path = Names.defaultPath(tool: "textfix") else { return }
         #expect(path.lastPathComponent == "names.txt")
         #expect(FileManager.default.fileExists(atPath: path.deletingLastPathComponent().appendingPathComponent("Package.swift").path))
     }

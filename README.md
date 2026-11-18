@@ -6,31 +6,96 @@ Small command-line tools that run fully on this Mac, using Apple's on-device fra
 
 ### pdf-ocr
 
-Reads the text in a PDF with Apple's Vision framework. Use it for scanned PDFs, which have no text layer.
+Reads the text in a PDF with Apple's Vision framework, then corrects OCR mistakes with
+[textfix](#textfix). Use it for scanned PDFs, which have no text layer.
 
 ```sh
 cd pdf-ocr
-make                 # builds bin/pdf-ocr
-make install         # optional: copies it to ~/.local/bin (change with PREFIX=...)
+make                 # builds .build/release/pdf-ocr (bin/pdf-ocr links to it)
+make install         # optional: symlinks it into ~/.local/bin (change with PREFIX=...)
 
 pdf-ocr document.pdf > document.txt
 pdf-ocr -l en-US --fast notes.pdf
 pdf-ocr --embedded-first mixed.pdf    # OCR only the pages that have no text layer
+pdf-ocr --raw document.pdf            # Vision's text exactly, no names fix, no correction
 pdf-ocr --list-languages
 ```
 
 How it works: PDFKit renders each page as an image (3× scale by default, about 216 dpi). Vision's `VNRecognizeTextRequest` then reads it in accurate mode, with language correction on. The default languages are Spanish and English.
 
-Requirements: macOS with the Xcode command-line tools (`swiftc`).
+Then, for each OCR'd page, `pdf-ocr` replaces known misreadings from its names file and asks the on-device language model to fix OCR mistakes: misread letters and digits ("rn" for "m", "1" for "l", "0" for "O"), missing accents, split or run-together words, and stray symbols. Each line stays on its own line. The model is told the page's language (detected among the `-l` languages; Spanish and English get specific instructions) and must not translate, rephrase, or add anything. A line the model added (made mostly of words that are not on the page) is removed, with a warning on stderr. If the model is unavailable, you get Vision's text and one warning. Pages read from the embedded text layer (`--embedded-first`) are printed exactly as they are.
+
+The correction is good at small errors. On a badly blurred scan, where Vision's text is mostly garbled, the model can guess wrong words. Use `--raw` to compare.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-l`, `--languages` | `es-ES,en-US` | Recognition languages, comma-separated |
+| `-s`, `--scale` | `3.0` | Render scale relative to 72 dpi |
+| `--fast` | off | Fast recognizer instead of the accurate one |
+| `--no-correction` | off | Turn off Vision's own language correction (not the model correction; that is `--raw`) |
+| `--embedded-first` | off | Use a page's embedded text when it has some; OCR only scanned pages |
+| `--raw` | off | Skip names replacement and the model correction |
+| `--names` | `pdf-ocr/names.txt` | Names file to use instead of the default |
+| `--instruct` | none | Custom correction instruction for this run |
+| `--list-languages` | — | Print the languages Vision supports and exit |
+
+Names file: same format as [dictate's](#names-file). Write the misreadings after `seen:` (`heard:` also works). The default file `pdf-ocr/names.txt` is git-ignored; start from the example:
+
+```sh
+cp pdf-ocr/names.example.txt pdf-ocr/names.txt
+```
+
+OCR misreadings differ from speech mishearings ("Mistra1", not "miss trail"), so each tool has its own file. The default file is found through the symlink back to the repo, so `make install` makes a symlink, not a copy.
+
+Requirements: macOS 26+ with the Xcode command-line tools (Swift 6). The model correction needs Apple Intelligence (see [dictate's requirements](#requirements)); without it, `pdf-ocr` still prints Vision's text.
 
 Sandboxes: inside a restrictive sandbox, such as the Claude Code bash sandbox, two things can fail:
-- The build cannot write to the default Clang module cache. The Makefile avoids this because it uses `.build/module-cache`.
+- `swift build` cannot compile the package manifest. Build outside the sandbox.
 - Vision cannot load its models and fails with `nilError`. Run the binary outside the sandbox.
+
+### textfix
+
+The correction step that `dictate` and `pdf-ocr` share, as a Swift library (`TextFix`) and a command. It does two things, both on-device:
+
+1. **Names replacement.** Known misrecognitions from a names file are replaced with the right name, deterministically.
+2. **Language-model clean-up** with Apple's on-device model (FoundationModels). The *source* chooses the instructions:
+   - `dictation`: remove fillers, repeated words and false starts; fix punctuation. Lines are joined into sentences.
+   - `ocr`: fix misread characters, split words and stray symbols. Line breaks are kept.
+
+   Both keep the wording, never summarise, never translate, and protect the spellings of the names the text uses. Long text goes to the model in chunks of up to 1,500 characters. A sentence the model added is removed, with a warning. For `ocr`, a word within one or two letter edits of a word in the input still counts as present, because it is probably a correction.
+
+```bash
+swift build -c release --package-path textfix
+textfix/.build/release/textfix --source ocr --language es --names pdf-ocr/names.txt page.txt
+pbpaste | textfix/.build/release/textfix --source dictation --language en
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `FILE` | stdin | Text to correct |
+| `--source` | `dictation` | `dictation` or `ocr` |
+| `--language` | none | `en` or `es` (also `es-ES` etc.); without it, the model keeps the text's language |
+| `--names` | none | Names file |
+| `--instruct` | none | Custom instruction instead of the light default |
+| `--no-model` | off | Names replacement only |
+
+Layout:
+
+```
+textfix/             Swift package, used by dictate and pdf-ocr through a path dependency
+  Sources/TextFix/
+    Names.swift        names file parsing, default path per tool, misrecognition replacement
+    Cleanup.swift      clean-up via FoundationModels: per-source instructions, chunking, added-text check
+    Language.swift     en/es and their names in the instructions
+  Sources/TextFixCLI/main.swift    the textfix command
+  Tests/TextFixTests/
+```
 
 ### dictate
 
 `dictate` does speech-to-text on-device with Apple's Speech framework, then
-cleans the text up with Apple's on-device language model (FoundationModels).
+cleans the text up with Apple's on-device language model (FoundationModels),
+through [textfix](#textfix).
 Nothing goes to the cloud and there is no API key. Speaker labels
 (`--speakers`) use [FluidAudio](https://github.com/FluidInference/FluidAudio),
 also on-device. It is a Swift package in `dictate/`.
@@ -252,9 +317,7 @@ dictate/             Swift package, Apple on-device speech + language model
     Speakers.swift     diarization via FluidAudio, text-to-speaker alignment
     Timestamps.swift   sentence start times: cleaned words matched back to heard words
     Live.swift         microphone recording, start/stop toggle via lock file
-    Names.swift        names file parsing + mishearing replacement
-    Cleanup.swift      clean-up via FoundationModels, chunked
-    Pipeline.swift     names → clean-up
+    Pipeline.swift     names → clean-up, both from textfix (../textfix)
     Stderr.swift       stderr messages, progress status line, library-output filter
     Feedback.swift     sounds, clipboard, error notifications
   Tests/DictateCoreTests/

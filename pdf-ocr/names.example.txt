@@ -1,0 +1,8 @@
+# Names and words that OCR gets wrong. Copy this file to names.txt (git-ignored) and edit.
+# One entry per line: NAME, optional context, seen: variant | variant | ...
+# The context may contain commas. Seen-as variants are replaced by NAME (case-insensitive,
+# whole words, longest first). "heard:" works the same as "seen:". Lines starting with # and
+# blank lines are ignored.
+Begoña, a colleague, seen: Begofia | Bcgoña | Begona
+Voxtral, Mistral's speech model, seen: VoxtraI | Voxtra1
+Mistral, AI company from Paris, seen: MistraI | Mistra1

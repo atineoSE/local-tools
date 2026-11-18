@@ -12,12 +12,31 @@ public struct NameEntry: Equatable, Sendable {
     }
 }
 
+/// A names file: known names, and the ways a recogniser (speech or OCR) gets them wrong.
 public enum Names {
-    /// `<repo>/dictate/names.txt`, where `<repo>` is the nearest ancestor of the running executable's
-    /// real path (symlinks resolved) that contains `dictate/Package.swift`. `nil` if not found.
-    public static func defaultPath(executable: URL? = Bundle.main.executableURL) -> URL? {
+    /// The words that start the misrecognition list: `heard:` (speech) or `seen:` (OCR); they mean the same.
+    static let variantKeys = ["heard:", "seen:"]
+
+    /// `<repo>/<tool>/names.txt`, where `<repo>` is the nearest ancestor of the running executable's
+    /// real path (symlinks resolved) that contains `<tool>/Package.swift`. `nil` if not found.
+    public static func defaultPath(tool: String, executable: URL? = Bundle.main.executableURL) -> URL? {
         guard let exe = executable else { return nil }
-        return repoRoot(fromExecutable: exe)?.appendingPathComponent("dictate/names.txt")
+        return repoRoot(fromExecutable: exe, tool: tool)?.appendingPathComponent("\(tool)/names.txt")
+    }
+
+    /// Loads the names file for a tool: `explicit` if given (a missing explicit file is reported through `warn`),
+    /// else the tool's default. Load errors are reported through `warn` and give no names.
+    public static func load(explicit: String?, tool: String, warn: (String) -> Void) -> [NameEntry] {
+        let path = explicit.map(URL.init(fileURLWithPath:)) ?? defaultPath(tool: tool)
+        if let explicit, !FileManager.default.fileExists(atPath: explicit) {
+            warn("warning: names file \(explicit) not found; names not replaced")
+        }
+        do {
+            return try load(path: path)
+        } catch {
+            warn("warning: could not load names file\(path.map { " \($0.path)" } ?? ""): \(error)")
+            return []
+        }
     }
 
     /// Loads name entries from `path`. `nil` or a missing file → `[]`; an unreadable file throws.
@@ -71,16 +90,18 @@ public enum Names {
         guard !name.isEmpty else { return nil }
 
         let rest = fields.dropFirst()
-        let heardIndex = rest.firstIndex {
-            $0.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("heard:")
+        func key(_ field: String) -> String? {
+            let f = field.trimmingCharacters(in: .whitespaces).lowercased()
+            return variantKeys.first(where: f.hasPrefix)
         }
+        let heardIndex = rest.firstIndex { key($0) != nil }
         let contextFields = rest[..<(heardIndex ?? rest.endIndex)]
         let context = contextFields.joined(separator: ",").trimmingCharacters(in: .whitespaces)
 
         var heardAs: [String] = []
         if let heardIndex {
             let heard = rest[heardIndex...].joined(separator: ",").trimmingCharacters(in: .whitespaces)
-            heardAs = heard.dropFirst("heard:".count)
+            heardAs = heard.dropFirst(key(heard)!.count)
                 .split(separator: "|")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
@@ -88,14 +109,14 @@ public enum Names {
         return NameEntry(name: name, context: context, heardAs: heardAs)
     }
 
-    /// Walks up from the executable's real path to the directory containing `dictate/Package.swift`.
-    static func repoRoot(fromExecutable exe: URL) -> URL? {
+    /// Walks up from the executable's real path to the directory containing `<tool>/Package.swift`.
+    static func repoRoot(fromExecutable exe: URL, tool: String) -> URL? {
         guard let real = realpath(exe.path, nil) else { return nil }
         defer { free(real) }
         var dir = URL(fileURLWithPath: String(cString: real)).deletingLastPathComponent()
         let fm = FileManager.default
         while true {
-            if fm.fileExists(atPath: dir.appendingPathComponent("dictate/Package.swift").path) { return dir }
+            if fm.fileExists(atPath: dir.appendingPathComponent("\(tool)/Package.swift").path) { return dir }
             let parent = dir.deletingLastPathComponent()
             if parent.path == dir.path { return nil }
             dir = parent

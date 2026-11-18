@@ -1,14 +1,16 @@
 PREFIX ?= $(HOME)/.local
 BIN := bin/pdf-ocr
 
-$(BIN): Sources/pdf-ocr.swift
-	@mkdir -p bin .build/module-cache
-	swiftc -O -module-cache-path .build/module-cache $< -o $@
+.PHONY: build install clean
+build:
+	swift build -c release
+	@mkdir -p bin
+	ln -sf ../.build/release/pdf-ocr $(BIN)
 
-.PHONY: install clean
-install: $(BIN)
+# A symlink, not a copy: pdf-ocr follows it back to this folder to find names.txt.
+install: build
 	install -d $(PREFIX)/bin
-	install -m 755 $(BIN) $(PREFIX)/bin/pdf-ocr
+	ln -sf $(CURDIR)/.build/release/pdf-ocr $(PREFIX)/bin/pdf-ocr
 
 clean:
 	rm -rf bin .build

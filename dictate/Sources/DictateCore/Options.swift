@@ -1,8 +1,8 @@
 import Foundation
+// Language, NameEntry, Names and Cleanup come from TextFix; re-exported so `import DictateCore` sees them.
+@_exported import TextFix
 
-public enum Language: String, Sendable, CaseIterable {
-    case en, es
-
+extension Language {
     /// Locale identifier handed to the Speech framework.
     public var localeID: String {
         switch self {
